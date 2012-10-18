@@ -229,6 +229,58 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     };
   },
 
+
+  findAll: function(store, type) {
+    this.findQuery(store, type, {});
+  },
+
+
+  /**
+    Using a cursor that loops through *all* results, comparing each one against the query. 
+    For performance reasons we should probably use index(es).
+    (https://developer.mozilla.org/en-US/docs/IndexedDB/Using_IndexedDB#Using_an_index)
+
+    @param {DS.Store} store
+    @param {Class} type
+    @param {Object} query
+    @param {Array} array
+  */
+  findQuery: function(store, type, query, array) {
+    var db = get(this, 'db'),
+    typeStr = type.toString();
+    records = [];
+
+    var dbTransaction = db.transaction( ['ember-records'] );
+    var dbStore = dbTransaction.objectStore('ember-records');
+
+    var match = function(hash, query) {
+      result = true;
+      for (var key in query) {
+        if (query.hasOwnProperty(key)) {
+          result = result && (hash[key] === query[key]);
+        }
+      }
+      return result;
+    }
+
+    dbStore.openCursor().onsuccess = function(event) {
+      var cursor = event.target.result;
+      if (cursor) {
+        if (cursor.key[0] === typeStr && match(cursor.value, query)) {
+          records.pushObject(cursor.value);
+        }
+        cursor.continue();
+      } else {
+        // Got all
+        if (!!array) {
+          array.load(records);
+        } else {
+          store.loadMany(type, records);
+        }
+      }
+    }
+  },
+
   /**
     @private
 
