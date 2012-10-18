@@ -204,7 +204,7 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   */
   find: function(store, type, id) {
     var db = get(this, 'db'),
-        dbId = [type.toString(), id];
+        dbId = [type.toString(), parseInt(id, 10)];
 
     var dbTransaction = db.transaction( ['ember-records'] );
     var dbStore = dbTransaction.objectStore('ember-records');
