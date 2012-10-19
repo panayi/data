@@ -88,6 +88,11 @@ Ember.onLoad('application', function(app) {
 
 
 DS.IndexedDBAdapter = DS.Adapter.extend({
+  
+  simulateRemoteResponse: true,
+
+  latency: 50,
+
   serializer: DS.IndexedDBSerializer,
 
   /**
@@ -204,7 +209,8 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   */
   find: function(store, type, id) {
     var db = get(this, 'db'),
-        dbId = [type.toString(), parseInt(id, 10)];
+        dbId = [type.toString(), id],
+        adapter = this;
 
     var dbTransaction = db.transaction( ['ember-records'] );
     var dbStore = dbTransaction.objectStore('ember-records');
@@ -215,17 +221,12 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
       throw new Error("An attempt to retrieve " + type + " with id " + id + " failed");
     };
 
-    var self = this;
     request.onsuccess = function(event) {
-      var hash = request.result;
+      var hash = request.result || {};
 
-      if (hash) {
-        store.load(type, request.result);
-      } else {
-        if (typeof type.notFoundCallback === "function") {
-          type.notFoundCallback();
-        }
-      }
+      adapter.simulateRemoteCall(function() {
+        store.load(type, hash);
+      }, store, type);
     };
   },
 
@@ -497,6 +498,17 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
         throw new Error("An attempt to update " + updatingDbId[0] + " with id " + updatingDbId[1] + " failed");
       }
     });
+  },
+
+  /*
+    @private
+  */
+  simulateRemoteCall: function(callback, store, type, record) {
+    if (get(this, 'simulateRemoteResponse')) {
+      setTimeout(callback, get(this, 'latency'));
+    } else {
+      callback();
+    }
   }
 });
 
