@@ -250,7 +250,7 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   */
   findQuery: function(store, type, query, array) {
     var db = get(this, 'db'),
-    typeStr = type.toString();
+    typeStr = type.toString(),
     records = [];
 
     var dbTransaction = db.transaction( ['ember-records'] );
