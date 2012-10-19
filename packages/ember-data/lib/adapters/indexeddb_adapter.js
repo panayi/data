@@ -222,11 +222,13 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     };
 
     request.onsuccess = function(event) {
-      var hash = request.result || {};
+      var hash = request.result;
 
-      adapter.simulateRemoteCall(function() {
-        store.load(type, hash);
-      }, store, type);
+      if (hash) {
+        adapter.simulateRemoteCall(function() {
+          store.load(type, hash);
+        }, store, type);
+      }
     };
   },
 
