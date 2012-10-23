@@ -171,16 +171,16 @@ DS.RESTAdapter = DS.Adapter.extend({
 
     this.ajax(this.buildURL(root, id), "GET", {
       success: function(json) {
-        this.didFindRecord(store, type, json);
+        this.didFindRecord(store, type, json, id);
       }
     });
   },
 
-  didFindRecord: function(store, type, json) {
+  didFindRecord: function(store, type, json, id) {
     var root = this.rootForType(type);
 
     this.sideload(store, type, json, root);
-    store.load(type, json[root]);
+    store.load(type, id, json[root]);
   },
 
   findAll: function(store, type, since) {
@@ -331,8 +331,10 @@ DS.RESTAdapter = DS.Adapter.extend({
     }
   },
 
+  url: "",
+
   buildURL: function(record, suffix) {
-    var url = [""];
+    var url = [this.url];
 
     Ember.assert("Namespace URL (" + this.namespace + ") must not start with slash", !this.namespace || this.namespace.toString().charAt(0) !== "/");
     Ember.assert("Record URL (" + record + ") must not start with slash", !record || record.toString().charAt(0) !== "/");
