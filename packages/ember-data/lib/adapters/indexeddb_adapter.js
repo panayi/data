@@ -87,10 +87,6 @@ Ember.onLoad('application', function(app) {
 
 
 DS.IndexedDBAdapter = DS.Adapter.extend({
-  
-  simulateRemoteResponse: true,
-
-  latency: 50,
 
   serializer: DS.IndexedDBSerializer,
 
@@ -156,11 +152,11 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   */
   createRecord: function(store, type, record) {
     var hash = this.toJSON(record, { includeId: true });
-
+    var self = this;
     // Store the type in the value so that we can index it on read
-    hash._type = type.toString();
-
+    // hash._type = type.toString();
     this.attemptDbTransaction(store, record, function(dbStore) {
+      self.didSaveRecord(store, record, hash);
       return dbStore.add(hash);
     });
   },
@@ -174,8 +170,10 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   */
   updateRecord: function(store, type, record) {
     var hash = this.toJSON(record, { includeId: true });
+    var self = this;
 
     this.attemptDbTransaction(store, record, function(dbStore) {
+      self.didSaveRecord(store, record, hash);
       return dbStore.put(hash);
     });
   },
@@ -193,8 +191,19 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     @param {DS.Model} record
   */
   deleteRecord: function(store, type, record) {
+    var self = this;
     this.attemptDbTransaction(store, record, function(dbStore) {
+      self.didSaveRecord(store, record);
       return dbStore['delete']([ record.constructor.toString(), get(record, 'id') ]);
+    });
+  },
+
+
+  didSaveRecord: function(store, record, hash) {
+    record.eachAssociation(function(name, meta) {
+      if (meta.kind === 'belongsTo') {
+        store.didUpdateRelationship(record, name);
+      }
     });
   },
 
@@ -227,9 +236,7 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
       var hash = request.result;
 
       if (hash) {
-        adapter.simulateRemoteCall(function() {
-          store.load(type, hash);
-        }, store, type);
+        store.load(type, hash);
       }
     };
   },
@@ -245,24 +252,30 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
 
     var index = dbStore.index('_type');
     var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
-    var onlyOfType = IDBKeyRange.only(typeStr),
-    cursor;
+    var onlyOfType = IDBKeyRange.only(typeStr);
+    var self = this;
 
     index.openCursor(onlyOfType).onsuccess = function(event) {
-      if (cursor = event.target.result) {
+      var cursor = event.target.result;
+
+      if (cursor) {
         records.pushObject(cursor.value);
         cursor.continue();
       } else {
         if (records.length === 0) {
-          var zero_results = store.get('zero_results') || Ember.A([]);
-          if (zero_results.indexOf(type) < 0) {
-            zero_results.pushObject(type);
-            store.set('zero_results', zero_results);
-          }
+          self.noRecordsFoundForType(store, type);
         }
         // Got all
         store.loadMany(type, records);
       }
+    }
+  },
+
+  noRecordsFoundForType: function(store, type) {
+    var zero_results = store.get('zero_results') || Ember.A([]);
+    if (zero_results.indexOf(type) < 0) {
+      zero_results.pushObject(type);
+      store.set('zero_results', zero_results);
     }
   },
 
@@ -508,6 +521,7 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
       throw new Error("An attempt to update " + updatingDbId[0] + " with id " + updatingDbId[1] + " failed");
     });
 
+    var self = this;
     lookup.addEventListener('success', function() {
       var hash = lookup.result;
 
@@ -529,17 +543,5 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
         throw new Error("An attempt to update " + updatingDbId[0] + " with id " + updatingDbId[1] + " failed");
       }
     });
-  },
-
-  /*
-    @private
-  */
-  simulateRemoteCall: function(callback, store, type, record) {
-    if (get(this, 'simulateRemoteResponse')) {
-      setTimeout(callback, get(this, 'latency'));
-    } else {
-      callback();
-    }
   }
 });
-
