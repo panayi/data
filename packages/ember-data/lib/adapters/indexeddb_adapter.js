@@ -153,8 +153,10 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   createRecord: function(store, type, record) {
     var hash = this.toJSON(record, { includeId: true });
     var self = this;
+
     // Store the type in the value so that we can index it on read
-    // hash._type = type.toString();
+    hash._type = type.toString();
+    
     this.attemptDbTransaction(store, record, function(dbStore) {
       self.didSaveRecord(store, record, hash);
       return dbStore.add(hash);
