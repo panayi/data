@@ -4,6 +4,8 @@ require('ember-data/serializers/indexeddb_serializer');
 
 /*global alert uuid*/
 
+var dbName = 'ember-records';
+
 var get = Ember.get, set = Ember.set;
 
 // This code initializes the IndexedDB database and defers Ember
@@ -13,12 +15,9 @@ Ember.onLoad('application', function(app) {
 
   var indexedDB = window.indexedDB || window.webkitIndexedDB || window.mozIndexedDB || window.msIndexedDB;
 
-  window.nukeDB = function() {
-    indexedDB.deleteDatabase('ember-records');
-  };
-
   var createSchema = function(db) {
-    db.createObjectStore('ember-records', { keyPath: 'id' });
+    var dbStore = db.createObjectStore(dbName, { keyPath: 'id' });
+    dbStore.createIndex("_type", "_type", { unique: false })
   };
 
   var oldUpgradeNeededCheck = function(db, callback) {
@@ -73,7 +72,7 @@ Ember.onLoad('application', function(app) {
     });
   };
 
-  openDB('ember-records', function(error, db) {
+  openDB(dbName, function(error, db) {
     if (error) {
       // TODO: There is some kind of API that seems to require conversion from
       // a numeric error code to a human code.
@@ -212,8 +211,8 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
         dbId = [type.toString(), id],
         adapter = this;
 
-    var dbTransaction = db.transaction( ['ember-records'] );
-    var dbStore = dbTransaction.objectStore('ember-records');
+    var dbTransaction = db.transaction( [dbName] );
+    var dbStore = dbTransaction.objectStore(dbName);
 
     var request = dbStore.get(dbId);
 
@@ -238,8 +237,8 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     typeStr = type.toString(),
     records = [];
 
-    var dbTransaction = db.transaction( ['ember-records'] );
-    var dbStore = dbTransaction.objectStore('ember-records');
+    var dbTransaction = db.transaction( [dbName] );
+    var dbStore = dbTransaction.objectStore(dbName);
 
     var index = dbStore.index('_type');
     var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
@@ -292,8 +291,8 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
       return result;
     };
 
-    var dbTransaction = db.transaction( ['ember-records'] );
-    var dbStore = dbTransaction.objectStore('ember-records');
+    var dbTransaction = db.transaction( [dbName] );
+    var dbStore = dbTransaction.objectStore(dbName);
 
     var index = dbStore.index('_type');
     var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
@@ -335,8 +334,8 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   withDbTransaction: function(callback) {
     var db = get(this, 'db');
 
-    var dbTransaction = db.transaction( ['ember-records'], 'readwrite' );
-    var dbStore = dbTransaction.objectStore('ember-records');
+    var dbTransaction = db.transaction( [dbName], 'readwrite' );
+    var dbStore = dbTransaction.objectStore(dbName);
 
     return callback.call(this, dbStore);
   },
