@@ -155,7 +155,7 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     @param {Class} type
     @param {DS.Model} record
   */
-  createRecord: function(store, type, record, s) {
+  createRecord: function(store, type, record) {
     var hash = this.toJSON(record, { includeId: true });
 
     this.attemptDbTransaction(store, record, function(dbStore) {
@@ -234,7 +234,36 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
 
 
   findAll: function(store, type) {
-    this.findQuery(store, type, {});
+    var db = get(this, 'db'),
+    typeStr = type.toString(),
+    records = [];
+
+    var dbTransaction = db.transaction( ['ember-records'] );
+    var dbStore = dbTransaction.objectStore('ember-records');
+
+    var index = dbStore.index('_type');
+    var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
+    var onlyOfType = IDBKeyRange.only(typeStr);
+
+    index.openCursor(onlyOfType).onsuccess = function(event) {
+      var cursor = event.target.result;
+      if (cursor) {
+        if (cursor.key[0] === typeStr) {
+          records.pushObject(cursor.value);
+        }
+        cursor.continue();
+      } else {
+        if (records.length === 0) {
+          var zero_results = store.get('zero_results') || Ember.A([]);
+          if (zero_results.indexOf(type) < 0) {
+            zero_results.pushObject(type);
+            store.set('zero_results', zero_results);
+          }
+        }
+        // Got all
+        store.loadMany(type, records);
+      }
+    }
   },
 
 
@@ -253,9 +282,6 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     typeStr = type.toString(),
     records = [];
 
-    var dbTransaction = db.transaction( ['ember-records'] );
-    var dbStore = dbTransaction.objectStore('ember-records');
-
     var match = function(hash, query) {
       result = true;
       for (var key in query) {
@@ -264,9 +290,16 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
         }
       }
       return result;
-    }
+    };
 
-    dbStore.openCursor().onsuccess = function(event) {
+    var dbTransaction = db.transaction( ['ember-records'] );
+    var dbStore = dbTransaction.objectStore('ember-records');
+
+    var index = dbStore.index('_type');
+    var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
+    var onlyOfType = IDBKeyRange.only(typeStr);
+
+    index.openCursor(onlyOfType).onsuccess = function(event) {
       var cursor = event.target.result;
       if (cursor) {
         if (cursor.key[0] === typeStr && match(cursor.value, query)) {
@@ -275,11 +308,7 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
         cursor.continue();
       } else {
         // Got all
-        if (!!array) {
-          array.load(records);
-        } else {
-          store.loadMany(type, records);
-        }
+        array.load(records);
       }
     }
   },
