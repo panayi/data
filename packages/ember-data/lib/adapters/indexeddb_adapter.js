@@ -157,6 +157,9 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   createRecord: function(store, type, record) {
     var hash = this.toJSON(record, { includeId: true });
 
+    // Store the type in the value so that we can index it on read
+    hash._type = type.toString();
+
     this.attemptDbTransaction(store, record, function(dbStore) {
       return dbStore.add(hash);
     });
@@ -242,14 +245,12 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
 
     var index = dbStore.index('_type');
     var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
-    var onlyOfType = IDBKeyRange.only(typeStr);
+    var onlyOfType = IDBKeyRange.only(typeStr),
+    cursor;
 
     index.openCursor(onlyOfType).onsuccess = function(event) {
-      var cursor = event.target.result;
-      if (cursor) {
-        if (cursor.key[0] === typeStr) {
-          records.pushObject(cursor.value);
-        }
+      if (cursor = event.target.result) {
+        records.pushObject(cursor.value);
         cursor.continue();
       } else {
         if (records.length === 0) {
@@ -296,12 +297,12 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
 
     var index = dbStore.index('_type');
     var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
-    var onlyOfType = IDBKeyRange.only(typeStr);
+    var onlyOfType = IDBKeyRange.only(typeStr),
+    cursor;
 
     index.openCursor(onlyOfType).onsuccess = function(event) {
-      var cursor = event.target.result;
-      if (cursor) {
-        if (cursor.key[0] === typeStr && match(cursor.value, query)) {
+      if (cursor = event.target.result) {
+        if (match(cursor.value, query)) {
           records.pushObject(cursor.value);
         }
         cursor.continue();
