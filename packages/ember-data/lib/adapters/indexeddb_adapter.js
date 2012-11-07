@@ -174,6 +174,9 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     var hash = this.toJSON(record, { includeId: true });
     var self = this;
 
+    // Store the type in the value so that we can index it on read
+    hash._type = type.toString();
+
     this.attemptDbTransaction(store, record, function(dbStore) {
       self.didSaveRecord(store, record, hash);
       return dbStore.put(hash);
@@ -255,9 +258,10 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     var index = dbStore.index('_type');
     var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
     var onlyOfType = IDBKeyRange.only(typeStr);
+    var request = index.openCursor(onlyOfType);
     var self = this;
 
-    index.openCursor(onlyOfType).onsuccess = function(event) {
+    request.onsuccess = function(event) {
       var cursor = event.target.result;
 
       if (cursor) {
@@ -349,8 +353,8 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   */
   withDbTransaction: function(callback) {
     var db = get(this, 'db');
-
-    var dbTransaction = db.transaction( [dbName], 'readwrite' );
+    var readwrite = (typeof IDBTransaction !== "undefined") ? IDBTransaction.READ_WRITE : 'readwrite';
+    var dbTransaction = db.transaction( [dbName], readwrite);
     var dbStore = dbTransaction.objectStore(dbName);
 
     return callback.call(this, dbStore);
@@ -547,3 +551,4 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     });
   }
 });
+

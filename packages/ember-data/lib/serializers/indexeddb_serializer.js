@@ -6,9 +6,6 @@ DS.IndexedDBSerializer = DS.Serializer.create({
   },
 
   extractId: function(type, hash) {
-    if (!hash || !hash.id) { debugger; }
-    // TODO: This is fucked
-    //
     // newly created records should not try to materialize
     if (hash && hash.id) { return hash.id[1]; }
   },
