@@ -21,7 +21,7 @@ Ember.onLoad('application', function(app) {
   };
 
   var oldUpgradeNeededCheck = function(db, callback) {
-    if (db.version !== '1') {
+    if (parseInt(db.version, 10) !== 1) {
       var setVersion = db.setVersion('1');
       setVersion.addEventListener('success', function() {
         createSchema(db);
