@@ -4,6 +4,8 @@ require('ember-data/serializers/indexeddb_serializer');
 
 /*global alert uuid*/
 
+var dbName = 'ember-records';
+
 var get = Ember.get, set = Ember.set;
 
 // This code initializes the IndexedDB database and defers Ember
@@ -13,16 +15,13 @@ Ember.onLoad('application', function(app) {
 
   var indexedDB = window.indexedDB || window.webkitIndexedDB || window.mozIndexedDB || window.msIndexedDB;
 
-  window.nukeDB = function() {
-    indexedDB.deleteDatabase('ember-records');
-  };
-
   var createSchema = function(db) {
-    db.createObjectStore('ember-records', { keyPath: 'id' });
+    var dbStore = db.createObjectStore(dbName, { keyPath: 'id' });
+    dbStore.createIndex("_type", "_type", { unique: false })
   };
 
   var oldUpgradeNeededCheck = function(db, callback) {
-    if (db.version !== '1') {
+    if (parseInt(db.version, 10) !== 1) {
       var setVersion = db.setVersion('1');
       setVersion.addEventListener('success', function() {
         createSchema(db);
@@ -73,7 +72,7 @@ Ember.onLoad('application', function(app) {
     });
   };
 
-  openDB('ember-records', function(error, db) {
+  openDB(dbName, function(error, db) {
     if (error) {
       // TODO: There is some kind of API that seems to require conversion from
       // a numeric error code to a human code.
@@ -88,10 +87,6 @@ Ember.onLoad('application', function(app) {
 
 
 DS.IndexedDBAdapter = DS.Adapter.extend({
-  
-  simulateRemoteResponse: true,
-
-  latency: 50,
 
   serializer: DS.IndexedDBSerializer,
 
@@ -155,10 +150,15 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     @param {Class} type
     @param {DS.Model} record
   */
-  createRecord: function(store, type, record, s) {
+  createRecord: function(store, type, record) {
     var hash = this.toJSON(record, { includeId: true });
+    var self = this;
 
+    // Store the type in the value so that we can index it on read
+    hash._type = type.toString();
+    
     this.attemptDbTransaction(store, record, function(dbStore) {
+      self.didSaveRecord(store, record, hash);
       return dbStore.add(hash);
     });
   },
@@ -172,8 +172,13 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   */
   updateRecord: function(store, type, record) {
     var hash = this.toJSON(record, { includeId: true });
+    var self = this;
+
+    // Store the type in the value so that we can index it on read
+    hash._type = type.toString();
 
     this.attemptDbTransaction(store, record, function(dbStore) {
+      self.didSaveRecord(store, record, hash);
       return dbStore.put(hash);
     });
   },
@@ -191,8 +196,19 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     @param {DS.Model} record
   */
   deleteRecord: function(store, type, record) {
+    var self = this;
     this.attemptDbTransaction(store, record, function(dbStore) {
+      self.didSaveRecord(store, record);
       return dbStore['delete']([ record.constructor.toString(), get(record, 'id') ]);
+    });
+  },
+
+
+  didSaveRecord: function(store, record, hash) {
+    record.eachAssociation(function(name, meta) {
+      if (meta.kind === 'belongsTo') {
+        store.didUpdateRelationship(record, name);
+      }
     });
   },
 
@@ -212,8 +228,8 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
         dbId = [type.toString(), id],
         adapter = this;
 
-    var dbTransaction = db.transaction( ['ember-records'] );
-    var dbStore = dbTransaction.objectStore('ember-records');
+    var dbTransaction = db.transaction( [dbName] );
+    var dbStore = dbTransaction.objectStore(dbName);
 
     var request = dbStore.get(dbId);
 
@@ -225,16 +241,48 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
       var hash = request.result;
 
       if (hash) {
-        adapter.simulateRemoteCall(function() {
-          store.load(type, hash);
-        }, store, type);
+        store.load(type, hash);
       }
     };
   },
 
 
   findAll: function(store, type) {
-    this.findQuery(store, type, {});
+    var db = get(this, 'db'),
+    typeStr = type.toString(),
+    records = [];
+
+    var dbTransaction = db.transaction( [dbName] );
+    var dbStore = dbTransaction.objectStore(dbName);
+
+    var index = dbStore.index('_type');
+    var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
+    var onlyOfType = IDBKeyRange.only(typeStr);
+    var request = index.openCursor(onlyOfType);
+    var self = this;
+
+    request.onsuccess = function(event) {
+      var cursor = event.target.result;
+
+      if (cursor) {
+        records.pushObject(cursor.value);
+        cursor.continue();
+      } else {
+        if (records.length === 0) {
+          self.noRecordsFoundForType(store, type);
+        }
+        // Got all
+        store.loadMany(type, records);
+      }
+    }
+  },
+
+  noRecordsFoundForType: function(store, type) {
+    var zero_results = store.get('zero_results') || Ember.A([]);
+    if (zero_results.indexOf(type) < 0) {
+      zero_results.pushObject(type);
+      store.set('zero_results', zero_results);
+    }
   },
 
 
@@ -253,9 +301,6 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
     typeStr = type.toString(),
     records = [];
 
-    var dbTransaction = db.transaction( ['ember-records'] );
-    var dbStore = dbTransaction.objectStore('ember-records');
-
     var match = function(hash, query) {
       result = true;
       for (var key in query) {
@@ -264,22 +309,25 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
         }
       }
       return result;
-    }
+    };
 
-    dbStore.openCursor().onsuccess = function(event) {
-      var cursor = event.target.result;
-      if (cursor) {
-        if (cursor.key[0] === typeStr && match(cursor.value, query)) {
+    var dbTransaction = db.transaction( [dbName] );
+    var dbStore = dbTransaction.objectStore(dbName);
+
+    var index = dbStore.index('_type');
+    var IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
+    var onlyOfType = IDBKeyRange.only(typeStr),
+    cursor;
+
+    index.openCursor(onlyOfType).onsuccess = function(event) {
+      if (cursor = event.target.result) {
+        if (match(cursor.value, query)) {
           records.pushObject(cursor.value);
         }
         cursor.continue();
       } else {
         // Got all
-        if (!!array) {
-          array.load(records);
-        } else {
-          store.loadMany(type, records);
-        }
+        array.load(records);
       }
     }
   },
@@ -305,9 +353,9 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
   */
   withDbTransaction: function(callback) {
     var db = get(this, 'db');
-
-    var dbTransaction = db.transaction( ['ember-records'], 'readwrite' );
-    var dbStore = dbTransaction.objectStore('ember-records');
+    var readwrite = (typeof IDBTransaction !== "undefined") ? IDBTransaction.READ_WRITE : 'readwrite';
+    var dbTransaction = db.transaction( [dbName], readwrite);
+    var dbStore = dbTransaction.objectStore(dbName);
 
     return callback.call(this, dbStore);
   },
@@ -479,6 +527,7 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
       throw new Error("An attempt to update " + updatingDbId[0] + " with id " + updatingDbId[1] + " failed");
     });
 
+    var self = this;
     lookup.addEventListener('success', function() {
       var hash = lookup.result;
 
@@ -500,17 +549,6 @@ DS.IndexedDBAdapter = DS.Adapter.extend({
         throw new Error("An attempt to update " + updatingDbId[0] + " with id " + updatingDbId[1] + " failed");
       }
     });
-  },
-
-  /*
-    @private
-  */
-  simulateRemoteCall: function(callback, store, type, record) {
-    if (get(this, 'simulateRemoteResponse')) {
-      setTimeout(callback, get(this, 'latency'));
-    } else {
-      callback();
-    }
   }
 });
 
